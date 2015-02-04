@@ -5,13 +5,12 @@
 
 var seenUnit = 0;
 var autobuySpeed = 250; // in ms
-var autobuyOn;
-var autobuyTimeout;
-
+var autobuyOn, autobuyTimeout, unitPanelTimeout;
 
 function init(autobuyEnabled) {
 	// Update unit panel timers
-	setInterval(function() {
+	if (typeof unitPanelTimeout !== "undefined") clearTimeout(unitPanelTimeout);
+	unitPanelTimeout = setInterval(function() {
 		seeUnit(seenUnit);
 	}, 1000);
 	// Set default state of autobuy
