@@ -4,29 +4,64 @@
 // Feel free to use and reuse this code without restriction.
 
 var seenUnit = 0;
+var autobuySpeed = 250; // in ms
+var autobuyOn;
+var autobuyTimeout;
 
-function init(autobuyOn) {
-	if (autobuyOn) {
-		createMessageBar();
-		setInterval(update, 100);
-	}
+
+function init(autobuyEnabled) {
+	// Update unit panel timers
 	setInterval(function() {
 		seeUnit(seenUnit);
 	}, 1000);
+	// Set default state of autobuy
+	autobuyOn = false;
+	// Add autobuy btn to dom (default state is off)
+	if (autobuyEnabled) createAutobuyBtn();
 }
 
-function update() {
-	var text = autobuy();
-	setMessageBarText(text);
+// Adds autobuy btn to dom (top-left of window)
+function createAutobuyBtn(){
+	$('#autobuyBtnBox').remove(); // debug
+	$('body').append('<div id="autobuyBtnBox"><button type="button" id="autobuyBtn">Autobuy: <span class="glyphicon glyphicon-unchecked"></span></button></div>');
+	$('#autobuyBtnBox').css({"position":"fixed","top":"2px","left":"2px"});
+	$('#autobuyBtn').addClass("btn btn-danger btn-xs").click(function(){toggleAutobuy()});
+}
+// Called by autobuy btn
+function toggleAutobuy(){
+	autobuyOn=!autobuyOn; // toggleAutobuy
+	if (autobuyOn) $('#autobuyBtn').html("Autobuy: <span class='glyphicon glyphicon-check'></span>").removeClass('btn-danger').addClass('btn-success');
+	else $('#autobuyBtn').html("Autobuy: <span class='glyphicon glyphicon-unchecked'></span>").removeClass('btn-success').addClass('btn-danger');
+	update();
+}
+
+// Update autobuy
+function update() {// Changed to allow autobuy toggle and speed adjustment
+	if (autobuyOn){ // On
+		if (!isNaN(autobuySpeed) && isFinite(autobuySpeed) && autobuySpeed >= 1){
+			setMessageBarText(autobuy()); // Cycle autobuy
+			autobuyTimeout = setTimeout(function(){update()},autobuySpeed); // Build timeout to refire
+		}else{ // speed error feedback
+			setMessageBarText("Autobuy speed invalid ("+autobuySpeed+")");
+		}
+	}else{ // Off
+		removeMessageBar();
+		if (typeof autobuyTimeout !== "undefined") clearTimeout(autobuyTimeout);
+	}
 }
 
 // HTML editing and display
-function createMessageBar() {
-	$('.navig').after($('<div class="clxmessagebar" style="color:white; font-size:200%; text-align:center">Hello, world!</div>'));
+function createMessageBar() { // Changed position and styling of message bar as well as added entry effects
+	$('#idmain').append($('<div id="clxmessagebar" class="bg-primary col-xs-12" style="display:none;">Autobuy Status</div>'));
+	$('#clxmessagebar').slideDown('slow');
+}
+function removeMessageBar(){ // Fancy cleanup - Ruggie
+	$('#clxmessagebar').slideUp('slow', function(){$('#clxmessagebar').remove();});
 }
 
-function setMessageBarText(text) {
-	$('.clxmessagebar').text(text);
+function setMessageBarText(text) { // Dynamicly create autobuy message bar - Ruggie
+	if (!$('#clxmessagebar').length) createMessageBar();
+	$('#clxmessagebar').text(text);
 }
 
 function seeUnit(that) {
@@ -52,24 +87,30 @@ function seeUnit(that) {
     }
 }
 
-function showUnitInfo(unit) {
-	doc.getElementById("idInfos").childNodes[1].childNodes[0].innerHTML = '<span style="font-size: 50%">' + getUnitInfo(unit) + '</span><br>' + description[unit];
+function showUnitInfo(unit) {// Mostly visual tweaks - Ruggie
+	$('#idInfos > div ').html('<div class="bg-primary row" style="font-size:60%;text-align:left;">' + getUnitInfo(unit) + '</div><p style="font-size:75%;">' + description[unit] + '</p>');
 }
 
-function getUnitInfo(unit) {
+function getUnitInfo(unit) { // Mostly visual tweaks - Ruggie
 	var nextAps = getNextUnitAPS(unit);
 	var cost = getUnitCost(unit);
 	var costx10 = getMultiUnitCost(unit, 10);
 	var costx100 = getMultiUnitCost(unit, 100);
 	var costnext = getMultiUnitCost(unit, Find_ToNext(unit)); // thanks spacemonster
-	var bci = getNextUnitBCI(unit);
+	var bci = getNextUnitBCI(unit, false);
 	var max = getMaxUnits(unit);
-	var timeUntilx1 = (totalAtome < cost) ? beautifySeconds(getTimeUntilAtomAmount(cost)) : "Done";
-	var timeUntilx10 = (totalAtome < costx10) ? beautifySeconds(getTimeUntilAtomAmount(costx10)) : "Done";
-	var timeUntilx100 = (totalAtome < costx100) ? beautifySeconds(getTimeUntilAtomAmount(costx100)) : "Done";
-	var timeUntilNext = (totalAtome < costnext) ? beautifySeconds(getTimeUntilAtomAmount(costnext)) : "Done";
-	
-	return "APS of next unit: " + beautifyNumber(nextAps) + ". Cost of 10: " + beautifyNumber(costx10) + ". Cost of 100: " + beautifyNumber(costx100) + ". Cost of next tier: " + beautifyNumber(costnext) +". Time until x1: " + timeUntilx1 + ". Time until x10: " + timeUntilx10 + ". Time until 100: " + timeUntilx100 + ". Time until next tier: " + timeUntilNext + ". Base cost per income: " + beautifyNumber(bci) + ". Max units: " + max + ".";
+	var timeUntilx1 = (totalAtome < cost) ? " In "+beautifySeconds(getTimeUntilAtomAmount(cost)) : " <b class=\"text-success\">Now</b>";
+	var timeUntilx10 = (totalAtome < costx10) ? " In "+beautifySeconds(getTimeUntilAtomAmount(costx10)) : " <b class=\"text-success\">Now</b>";
+	var timeUntilx100 = (totalAtome < costx100) ? " In "+beautifySeconds(getTimeUntilAtomAmount(costx100)) : " <b class=\"text-success\">Now</b>";
+	var timeUntilNext = (totalAtome < costnext) ? " In "+beautifySeconds(getTimeUntilAtomAmount(costnext)) : " <b class=\"text-success\">Now</b>";
+
+	return "<div class=\"col-xs-4\" style=\"padding:0;\">APS of next unit: " + beautifyNumber(nextAps) + ".</div>"+
+		"<div class=\"col-xs-4\" style=\"padding:0;\">Cost of <span class=\"text-danger\">1</span>: " + beautifyNumber(cost) +timeUntilx1+".</div>"+
+		"<div class=\"col-xs-4\" style=\"padding:0;\">Cost of <span class=\"text-danger\">10</span>: " + beautifyNumber(costx10) +timeUntilx10+".</div>"+
+		"<div class=\"col-xs-4\" style=\"padding:0;\">Cost of <span class=\"text-danger\">100</span>: " + beautifyNumber(costx100) +timeUntilx100+".</div>"+
+		"<div class=\"col-xs-4\" style=\"padding:0;\">Cost of <span class=\"text-danger\">Next</span> tier: " + beautifyNumber(costnext) +timeUntilNext+".</div>"+
+		"<div class=\"col-xs-4\" style=\"padding:0;\">Base cost per income: " + beautifyNumber(bci) + ".</div>"+
+		"<div class=\"col-xs-4\" style=\"padding:0;\">Max units: " + max + ".</div>";
 }
 
 // Time functions
@@ -116,7 +157,8 @@ function isStepBoundary(unitsOwned) {
 		   (unitsOwned == 399) || (unitsOwned == 449) ||
 		   (unitsOwned == 499) || (unitsOwned == 599) ||
 		   (unitsOwned == 699) || (unitsOwned == 799) ||
-		   (unitsOwned == 899) || (unitsOwned == 999);
+		   (unitsOwned == 899) || (unitsOwned == 999) ||
+		   (unitsOwned == 1099); // Level20 is final boundry at 1100 units
 }
 
 function getUnitCost(unit) {
