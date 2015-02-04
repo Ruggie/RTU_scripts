@@ -193,8 +193,9 @@ function getMaxUnits(unit) {
 	return amount;
 }
 
-function getNextUnitBCI(unit) {
-	return getUnitCost(unit) / getNextUnitAPS(unit);
+function getNextUnitBCI(unit, adjusted) { // Added switch for time adjusted(weighted) BCI 
+	if (!adjusted) return getUnitCost(unit) / getNextUnitAPS(unit);
+	else return ( getUnitCost(unit) / getNextUnitAPS(unit) ) + (getTimeUntilAtomAmount( getUnitCost(unit) ) * 2); // Time is valuable!
 }
 
 function getMultiUnitBCI(unit, amount) {
@@ -281,7 +282,23 @@ function getNewAPSFromBonus(unit) {
 }
 
 function getNextBonusBCI(unit) {
-	return getNextBonusCost(unit) / getNewAPSFromBonus(unit);
+	// Changed to only calculate BCI if upgrade is available.
+	if (bonusAvailable(unit)) return getNextBonusCost(unit) / getNewAPSFromBonus(unit);
+	else return 1/0; // If a bonus isn't available then BCI is Infinity
+}
+
+// Get number of available bonuses for unit
+function getNumberOfBonusesAvailable(unit){
+	var result=0;
+	for (var i = 1; i <= 20; i++)
+		if (upgradeAll[unit][i] == 1)
+			result++;
+	return result;
+}
+
+// Return true if bonus upgrades available for unit
+function bonusAvailable(unit){
+	return (getNumberOfBonusesAvailable(unit) > 0);
 }
 
 // Specials functions
@@ -310,8 +327,9 @@ function getNextSpecialAPS() {
 	return getUnitTotalAPS(index) * 99; // multiplying APS by 100 is essentially adding aps*99 to it
 }
 
-function getNextSpecialBCI() {
-	return getNextSpecialCost() / getNextSpecialAPS();
+function getNextSpecialBCI(adjusted) { // true to consider time
+	if (!adjusted) return getNextSpecialCost() / getNextSpecialAPS();
+	else return ( getNextSpecialCost() / getNextSpecialAPS() ) + ( getTimeUntilAtomAmount(getNextSpecialCost()) * 2); // Time is valuable
 }
 
 // Buying functions
@@ -327,35 +345,47 @@ function buyUpgrade(unit) {
 }
 
 function buySpecial() {
-	specialclick(getNextSpecialIndex());
+	if (getNextSpecialIndex() != -1)
+		specialclick(getNextSpecialIndex());
 }
 
 function autobuy() {
 	// Automatically buy the best item based on BCI
-	
+
 	// create an array of unit BCIs
 	var unitBCIs = new Array(75);
 	for (var i = 0; i < 75; i++) {
-		unitBCIs[i] = getNextUnitBCI(i);
+		unitBCIs[i] = getNextUnitBCI(i, true);
 	}
-	
+
 	// create an array of next bonus BCIs
 	var bonusBCIs = new Array(75);
 	for (var i = 0; i < 75; i++) {
 		bonusBCIs[i] = getNextBonusBCI(i);
 	}
-	
-	var nextSpecialBCI = getNextSpecialBCI();
-	
+
+	var nextSpecialBCI = getNextSpecialBCI(true);
+
 	var bestUnitIndex = indexOfSmallest(unitBCIs);
 	var bestBonusIndex = indexOfSmallest(bonusBCIs);
-	
+
 	var bestUnitBCI = unitBCIs[bestUnitIndex];
 	var bestBonusBCI = bonusBCIs[bestBonusIndex];
-	
+
+	// Try to buy next tiers outright if we have the atoms, start with biggest first and work backwards (biggest return first)
+	for (var i = 74; i >= 0; i--){
+		if ( getUnitsOwned(i) == 0 && i != 0 && getUnitsOwned(i-1) > 0 && totalAtome > getUnitCost(i)){
+			buyUnit(i);
+			return "Trying to buy " + arUnit[i][8] + " (BCI: " + beautifyNumber(getNextUnitBCI(i, false)) + ")";
+		}else if (totalAtome > getMultiUnitCost(i, Find_ToNext(i)) && getUnitsOwned(i) > 0 && getUnitsOwned(i) < 1100){
+			tonext(i); // Thanks space monster
+			return "Trying to buy next " + arUnit[i][8] + " tier (BCI: " + beautifyNumber(getNextUnitBCI(i, false)) + ")";;
+		}
+	}
+
 	if (bestUnitBCI <= bestBonusBCI && bestUnitBCI <= nextSpecialBCI) {
 		buyUnit(bestUnitIndex);
-		return "Trying to buy " + arUnit[bestUnitIndex][8] + " (BCI: " + beautifyNumber(bestUnitBCI) + ")";
+		return "Trying to buy " + arUnit[bestUnitIndex][8] + " (BCI: " + beautifyNumber(getNextUnitBCI(bestUnitIndex, false)) + ")";
 	}
 	else if (bestBonusBCI <= bestUnitBCI && bestBonusBCI <= nextSpecialBCI) {
 		var nextBonusNumber = getNumberOfBonusesPurchased(bestBonusIndex) + 1;
@@ -364,20 +394,29 @@ function autobuy() {
 			return "Trying to buy upgrade for " + arUnit[bestBonusIndex][8] + " (BCI: " + beautifyNumber(bestBonusBCI) + ")";
 		}
 		else {
-			if (bestUnitBCI <= nextSpecialBCI) { 
+			if (bestUnitBCI <= nextSpecialBCI) {
 				buyUnit(bestUnitIndex);
-				return "Trying to buy " + arUnit[bestUnitIndex][8] + " (BCI: " + beautifyNumber(bestUnitBCI) + ")";
+				return "Trying to buy " + arUnit[bestUnitIndex][8] + " (BCI: " + beautifyNumber(getNextUnitBCI(bestUnitIndex, false)) + ")";
 			}
-			else { 
+			else if (isFinite(nextSpecialBCI)) {
 				buySpecial();
-				return "Trying to buy Special (BCI: " + beautifyNumber(nextSpecialBCI) + ")";
+				return "Trying to buy Special (BCI: " + beautifyNumber(getNextSpecialBCI(false)) + ")";
 			}
 		}
 	}
-	else if (nextSpecialBCI <= bestUnitBCI && nextSpecialBCI <= bestBonusBCI) {
+	else if (isFinite(nextSpecialBCI) && nextSpecialBCI <= bestUnitBCI && nextSpecialBCI <= bestBonusBCI) {
 		buySpecial();
-		return "Trying to buy Special (BCI: " + beautifyNumber(nextSpecialBCI) + ")";
+		return "Trying to buy Special (BCI: " + beautifyNumber(getNextSpecialBCI(false)) + ")";
+	}else{
+		// End game stuff here... No more value moves anymore
+		// Starting with the latest item, buy anything we can
+		for (var i = 74; i >= 0; i--){
+			if (getUnitCost(i) < totalAtome){
+				buyUnit(i);
+				return "Buying whatever we can afford";
+			}
+		}
 	}
-	
+
 	return "Bought nothing";
 }
